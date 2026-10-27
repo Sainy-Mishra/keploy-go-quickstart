@@ -1,0 +1,184 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #fafaf9;
+  --fg: #1c1917;
+  --muted: #57534e;
+  --border: #e7e5e4;
+  --card: #ffffff;
+  --accent: #ea580c;
+  --accent-soft: #ffedd5;
+  --code-bg: #f6f6f4;
+}
+
+.dark {
+  --bg: #0c0a09;
+  --fg: #e7e5e4;
+  --muted: #a8a29e;
+  --border: #292524;
+  --card: #151311;
+  --accent: #fb923c;
+  --accent-soft: #3a1d0a;
+  --code-bg: #141210;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Article typography ---------- */
+.doc h1 {
+  font-size: 2.25rem;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 1rem;
+}
+.doc h2 {
+  font-size: 1.6rem;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 3.25rem 0 1rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--border);
+}
+.doc h3 {
+  font-size: 1.2rem;
+  font-weight: 650;
+  margin: 2rem 0 0.75rem;
+}
+.doc p {
+  line-height: 1.75;
+  margin: 0 0 1.1rem;
+  color: var(--fg);
+}
+.doc ul,
+.doc ol {
+  margin: 0 0 1.1rem 1.25rem;
+  line-height: 1.75;
+}
+.doc ul {
+  list-style: disc;
+}
+.doc ol {
+  list-style: decimal;
+}
+.doc li {
+  margin: 0.3rem 0;
+}
+.doc a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.doc strong {
+  font-weight: 650;
+}
+.doc blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1rem;
+  color: var(--muted);
+  margin: 1.25rem 0;
+}
+.doc :not(pre) > code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.875em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0 1.5rem;
+  font-size: 0.925rem;
+}
+.doc th,
+.doc td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.doc th {
+  background: var(--code-bg);
+  font-weight: 650;
+}
+.doc hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2.5rem 0;
+}
+
+/* ---------- Code blocks (rehype-pretty-code + shiki dual theme) ---------- */
+figure[data-rehype-pretty-code-figure] {
+  margin: 0;
+}
+code[data-theme*=" "],
+code[data-theme*=" "] span {
+  color: var(--shiki-light);
+}
+.dark code[data-theme*=" "],
+.dark code[data-theme*=" "] span {
+  color: var(--shiki-dark);
+}
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+pre code {
+  display: grid;
+  min-width: 100%;
+  padding: 1rem 0;
+  background: transparent;
+}
+pre [data-line] {
+  padding: 0 1rem;
+}
+[data-rehype-pretty-code-title] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  padding: 0.5rem 1rem;
+  margin-top: 1.25rem;
+}
+[data-rehype-pretty-code-title] + .codeblock {
+  margin-top: 0;
+}
+[data-rehype-pretty-code-title] + .codeblock pre {
+  border-radius: 0 0 10px 10px;
+}
+[data-highlighted-line] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* ---------- Copy button visibility ---------- */
+.codeblock:hover .copy-btn,
+.copy-btn:focus-visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
