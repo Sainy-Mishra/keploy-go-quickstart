@@ -1,0 +1,333 @@
+# Record and replay Go API tests with Keploy
+
+I picked the **Echo + PostgreSQL** quickstart, a small URL shortener written in Go. In this tutorial I'll walk you through running it end to end: install Keploy, record real API calls as test cases, and replay them with the database turned off.
+
+If you've never used Keploy, this is written for you. I'll explain what each command does and why, not just what to type.
+
+| | |
+|---|---|
+| **Time** | About 20 minutes |
+| **You'll need** | Go, Docker with Compose v2, Git |
+| **You'll end up with** | A set of recorded test cases and DB mocks that run with one command |
+| **Sample app** | Go + Echo + PostgreSQL URL shortener |
+
+## Why Keploy, and what it actually does
+
+Testing a Go service that talks to a database usually means one of two things. You spin up a real Postgres for every test run, or you write mocks by hand and keep them in sync with your queries. Both get tiresome.
+
+Keploy takes a different route. You run your app normally and send it some requests. Keploy watches the traffic going **into** your app and the calls going **out** of it to the database, and saves them as files. Later it can send the same requests again and answer the database calls from the saved copies.
+
+<FlowDiagram />
+
+Two terms you'll see a lot:
+
+- **Test case**: one recorded HTTP request and the response your app gave.
+- **Mock**: one recorded call from your app to a dependency (here, Postgres) and the answer it got.
+
+The part that made it click for me is that you don't change your Go code to make any of this work. Keploy sits next to the app and watches the network, so there's no SDK to import and no test file to write.
+
+<Callout type="info" title="How does it see the traffic?">
+
+Keploy uses eBPF, a Linux kernel feature that lets a program observe network calls from the outside. That's why the Linux kernel version matters in the prerequisites below.
+
+</Callout>
+
+## Before you start
+
+Check that these work in your terminal:
+
+```bash title="terminal"
+go version
+git --version
+docker --version
+docker compose version
+```
+
+A few things depend on your machine:
+
+- **Linux:** the kernel needs to be **5.10 or newer**. Check with `uname -r`.
+- **macOS (Apple Silicon) and Windows:** Keploy installs natively, but when it runs without Docker it only understands HTTP, MySQL and MongoDB calls. PostgreSQL calls are captured as raw bytes, and those usually don't replay. This tutorial uses Docker Compose, which avoids the problem.
+- **Intel Mac:** use the Lima setup from the [installation guide](https://keploy.io/docs/server/installation/).
+
+<Callout type="warning" title="Make sure Docker is running">
+
+Keploy starts your app through `docker compose`, so the Docker daemon has to be up before you record. If something fails right at the start, check this first.
+
+</Callout>
+
+## Step by step
+
+<Steps>
+
+<Step title="Install the Keploy CLI">
+
+One command installs it:
+
+```bash title="terminal"
+curl --silent -O -L https://keploy.io/install.sh && source install.sh
+```
+
+Then check that it worked:
+
+```bash title="terminal"
+keploy --version
+```
+
+You should see a Keploy banner and a version number. If the command isn't found, open a new terminal so your `PATH` refreshes.
+
+Then log in. Keploy needs an account (the free one is enough) and opens your browser to sign you in:
+
+```bash title="terminal"
+keploy login
+```
+
+<Callout type="tip">
+
+If you don't log in first, the first `keploy record` will ask you to sign in anyway, so you can't skip it. Doing it now keeps the login prompt out of the middle of your recording.
+
+</Callout>
+
+</Step>
+
+<Step title="Clone the sample app">
+
+```bash title="terminal"
+git clone https://github.com/keploy/samples-go.git
+cd samples-go/echo-sql
+go mod download
+```
+
+`samples-go` holds all of Keploy's Go examples, so you need to be inside the `echo-sql` folder. The app is a URL shortener with two endpoints:
+
+| Method | Path | What it does |
+|---|---|---|
+| `POST` | `/url` | Takes a long URL, stores it in Postgres, returns a short one |
+| `GET` | `/:id` | Looks up the short ID in Postgres and redirects to the original URL |
+
+It listens on port **8082**.
+
+</Step>
+
+<Step title="Change the database host">
+
+This is the one edit you need to make, and it's easy to miss.
+
+Open `main.go` and find the Postgres connection around **line 41**. The host is set to `localhost`. Change it to `postgres`:
+
+```go title="main.go (around line 41)"
+// before
+host := "localhost"
+
+// after
+host := "postgres"
+```
+
+<Callout type="note" title="Why this change?">
+
+With Docker Compose, your app and Postgres run in separate containers. Containers find each other by service name, and the service in the compose file is called `postgres`. Inside the app's container, `localhost` points at the app itself, not the database, so the connection would fail.
+
+The exact line in your copy of `main.go` may look a little different, so match on the Postgres host rather than the line number.
+
+</Callout>
+
+</Step>
+
+<Step title="Record your test cases">
+
+Now the main part. This one command builds and starts the app and the database, and tells Keploy to start watching:
+
+```bash title="terminal"
+keploy record -c "docker compose up" --container-name "echoApp" --build-delay 50
+```
+
+Here's what each part means:
+
+| Part | Meaning |
+|---|---|
+| `keploy record` | Start recording mode |
+| `-c "docker compose up"` | The command that starts your app. Keploy runs it for you |
+| `--container-name "echoApp"` | Which container is *your app*, so Keploy knows what to record traffic for. This is the container name from the compose file |
+| `--build-delay 50` | Wait up to 50 seconds for images to build and services to start before Keploy begins watching |
+
+<Callout type="tip" title="If it starts recording too early">
+
+The first run builds the Docker image, which can take a while. If Keploy starts watching before your app is ready, raise `--build-delay`. If your services are already up, you can leave the flag out.
+
+</Callout>
+
+Leave that terminal running. Open a **second terminal** and send some traffic.
+
+First, create a short URL:
+
+```bash title="terminal 2"
+curl --request POST \
+  --url http://localhost:8082/url \
+  --header 'content-type: application/json' \
+  --data '{
+  "url": "https://github.com"
+}'
+```
+
+You'll get a response with a short URL and a timestamp. The ID at the end of the URL will be different for you:
+
+```json title="response"
+{
+  "ts": 1647802058801841100,
+  "url": "http://localhost:8082/GuwHCgoQ"
+}
+```
+
+Now use that short URL. Copy the ID from **your** response:
+
+```bash title="terminal 2"
+curl http://localhost:8082/GuwHCgoQ
+```
+
+Try a few more. Shorten a couple of different URLs and visit each one. More varied calls mean more test cases.
+
+When you're done, go back to the first terminal and press `Ctrl + C` to stop recording.
+
+</Step>
+
+<Step title="Look at what Keploy saved">
+
+Keploy wrote everything into a `keploy` folder inside `echo-sql`:
+
+```text title="keploy/ (layout may vary slightly by version)"
+keploy/
+├── test-set-0/
+│   ├── tests/
+│   │   ├── test-1.yaml
+│   │   ├── test-2.yaml
+│   │   └── ...
+│   └── mocks.yaml
+└── ...
+```
+
+Open `test-1.yaml`. It's plain, readable YAML. Here's a trimmed example of the shape, so you know what to look for:
+
+```yaml title="keploy/test-set-0/tests/test-1.yaml (trimmed, yours has more fields)"
+kind: Http
+name: test-1
+spec:
+  req:
+    method: POST
+    url: http://localhost:8082/url
+    body: '{"url": "https://github.com"}'
+  resp:
+    status_code: 200
+    body: '{"ts": 1647802058801841100, "url": "http://localhost:8082/GuwHCgoQ"}'
+```
+
+Then open `mocks.yaml`. This is where the Postgres side lives: what the app asked the database and what the database answered.
+
+<Callout type="note" title="The a-ha moment">
+
+These files are **editable**. A test case is a normal text file you can read in a pull request, change by hand, or delete. That also means you can commit them next to your code and they go through code review like anything else.
+
+</Callout>
+
+</Step>
+
+<Step title="Replay the tests">
+
+Now see if the app still behaves the same way:
+
+```bash title="terminal"
+keploy test -c "docker compose up" --container-name "echoApp" --build-delay 50 --delay 10
+```
+
+It looks like the record command, with one new flag:
+
+| Part | Meaning |
+|---|---|
+| `keploy test` | Start replay mode |
+| `--delay 10` | Wait 10 seconds after the app starts before sending the first request, so the app has time to be ready |
+
+During replay, Keploy sends each saved request to your app and compares the response against what it recorded. When your app calls Postgres, Keploy answers from `mocks.yaml`. At the end you get a summary of how many test cases passed and failed.
+
+This is the point of the whole exercise: **the app thinks it's talking to Postgres, but it's talking to Keploy.** You can test the service on a laptop or in CI without a database, and you didn't write a single mock.
+
+</Step>
+
+</Steps>
+
+## Make a test fail on purpose
+
+A test run that always passes doesn't teach you much. Let's break one so you can see what a failure looks like.
+
+Open `keploy/test-set-0/tests/test-1.yaml` and change the expected status code:
+
+```yaml title="test-1.yaml" {3}
+  resp:
+    # was 200
+    status_code: 500
+```
+
+Run the replay command again. Keploy reports that test as failed and shows the difference between what it expected and what the app returned. Change the value back to what it was and the run passes again.
+
+This is the same thing that would happen if you broke your handler by accident. Keploy would catch it because the response no longer matches the recording.
+
+## What is "noise"?
+
+You may hit a case where a test fails even though nothing is wrong. The usual cause is a field that changes on every call. In this app that's the `ts` timestamp in the response.
+
+Keploy calls these fields **noise**. It identifies the obvious ones itself, so the `ts` field is skipped during comparison. If another dynamic field ever causes a failure, you can mark it as noise in the test file. Fields like generated IDs, timestamps and tokens are the usual candidates.
+
+<Callout type="warning" title="Don't over-use noise">
+
+Marking a field as noise tells Keploy to stop checking it. That's right for a timestamp, but if you ignore too much, a test can pass while your app is actually returning the wrong thing. Keep the list small.
+
+</Callout>
+
+## Alternative: run the app directly on Linux or WSL
+
+If you'd rather not run the app in a container, you can run it on your machine and keep only Postgres in Docker. This works on Linux and WSL.
+
+Start only the database:
+
+```bash title="terminal"
+docker-compose up postgres
+```
+
+This time **revert** the host in `main.go` back to `localhost`, since the app now runs on your machine and Postgres is exposed to it. Then build and record:
+
+```bash title="terminal"
+go build -o echo-psql-url-shortener
+sudo -E PATH=$PATH keploy record -c "./echo-psql-url-shortener"
+```
+
+Send the same `curl` calls as before, stop with `Ctrl + C`, and replay:
+
+```bash title="terminal"
+sudo -E PATH=$PATH keploy test -c "./echo-psql-url-shortener"
+```
+
+The `sudo -E PATH=$PATH` part keeps your environment so `keploy` and Go are still found when running with root privileges, which eBPF needs.
+
+## When things go wrong
+
+| What you see | What to check |
+|---|---|
+| App can't connect to the database | You skipped the `localhost` to `postgres` change in `main.go` (compose setup) |
+| Nothing gets recorded | The `curl` calls went out before the app was ready. Wait for the app to be up, then send them. Also check the port is `8082` |
+| Recording starts before the app is built | Raise `--build-delay` |
+| First replay requests fail | Raise `--delay` so the app has time to start |
+| Tests fail on a timestamp or ID | That field is noise. Mark it in the test file |
+| `keploy: command not found` | Open a new terminal so the `PATH` updates |
+| Nothing is captured on macOS or Windows without Docker | PostgreSQL isn't replayable natively there. Use the Docker Compose steps |
+
+## What I took from this
+
+- Keploy turns **real traffic** into tests. You don't write them, you record them.
+- It saves both sides of the conversation: the **test cases** for your API and the **mocks** for your database.
+- Replay needs no database, which is what makes it handy for CI.
+- Everything is stored as plain YAML you can read, edit and commit.
+
+## Where to go next
+
+- Try another quickstart. The Go list also has Gin + Redis, Mux + Postgres, Mux + MySQL and FastHttp + Postgres: [Go quickstarts](https://keploy.io/docs/quickstart/golang-filter/)
+- Run your recorded tests in a pipeline: [CI/CD integration](https://keploy.io/docs/ci-cd/github/)
+- See how recorded tests count toward coverage: [Test coverage integration](https://keploy.io/docs/quickstart/code-coverage/)
+- Browse every command and flag: [CLI commands](https://keploy.io/docs/running-keploy/cli-commands/)
+- Official version of this quickstart: [Echo + Postgres](https://keploy.io/docs/quickstart/samples-echo/)
