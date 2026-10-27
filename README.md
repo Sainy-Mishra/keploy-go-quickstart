@@ -25,7 +25,7 @@ Syntax highlighting comes from `rehype-pretty-code` (Shiki) with matching light 
 ## Run it locally
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Sainy-Mishra/keploy-go-quickstart.git
 cd keploy-go-quickstart
 npm install
 npm run dev
